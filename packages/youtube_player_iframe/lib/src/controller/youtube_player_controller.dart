@@ -56,12 +56,18 @@ class YoutubePlayerController implements YoutubePlayerIFrameAPI {
 
         return switch (uri) {
           null => NavigationDecision.prevent,
-
-          // required for ios
+          // Required for iOS: allow the base page load for YouTube hosts
           var u when u.toString() == 'https://www.youtube.com/' =>
             NavigationDecision.navigate,
-          var u when u.host == 'www.youtube.com' && u.path == '/embed/' =>
+          var u
+              when u.path == '/' &&
+                  u.host ==
+                      Uri.tryParse(params.origin ??
+                              'https://www.youtube-nocookie.com')
+                          ?.host =>
             NavigationDecision.navigate,
+          // Allow embed URLs for configured origin host
+          var u when _isEmbedUrl(u) => NavigationDecision.navigate,
           var u when u.toString() == 'about:blank' =>
             NavigationDecision.prevent,
           _ => onWebNavigationRequest == null
@@ -661,6 +667,18 @@ class YoutubePlayerController implements YoutubePlayerIFrameAPI {
     return videoStateStream.map((state) => state.position);
   }
 
+  /// Whether [uri] is an embed URL for the configured origin or YouTube host.
+  bool _isEmbedUrl(Uri uri) {
+    final originHost = Uri.tryParse(
+      params.origin ?? 'https://www.youtube-nocookie.com',
+    )?.host;
+    final isAllowedHost =
+        uri.host == originHost || uri.host == 'www.youtube.com';
+    final isEmbedPath =
+        uri.path == '/embed/' || uri.path.startsWith('/embed/');
+    return isAllowedHost && isEmbedPath;
+  }
+
   NavigationDecision _decideNavigation(Uri uri) {
     final params = uri.queryParameters;
     final host = uri.host;
@@ -675,7 +693,8 @@ class YoutubePlayerController implements YoutubePlayerIFrameAPI {
       featureName = params['feature'];
     } else if (path == '/watch') {
       featureName = 'emb_info';
-    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+    } else if (defaultTargetPlatform == TargetPlatform.iOS &&
+        _isEmbedUrl(uri)) {
       return NavigationDecision.navigate;
     }
 
